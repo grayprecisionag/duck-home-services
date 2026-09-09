@@ -1,7 +1,9 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
-export default async function HomePage() {
+export type UserRole = "admin" | "worker" | "customer";
+
+export async function requireRole(requiredRole: UserRole) {
   const supabase = await createClient();
 
   const { data: claimsData, error: claimsError } =
@@ -15,7 +17,7 @@ export default async function HomePage() {
 
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
-    .select("role")
+    .select("id, first_name, last_name, role")
     .eq("id", userId)
     .single();
 
@@ -23,13 +25,17 @@ export default async function HomePage() {
     redirect("/login");
   }
 
-  if (profile.role === "admin") {
-    redirect("/admin");
+  if (profile.role !== requiredRole) {
+    if (profile.role === "admin") {
+      redirect("/admin");
+    }
+
+    if (profile.role === "worker") {
+      redirect("/worker");
+    }
+
+    redirect("/customer");
   }
 
-  if (profile.role === "worker") {
-    redirect("/worker");
-  }
-
-  redirect("/customer");
+  return profile;
 }
