@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 
 type NamedRelation = {
@@ -257,8 +258,7 @@ export default async function CustomerPage() {
                 />
 
                 <div className="mt-5">
-                  {subscriptions.length ===
-                  0 ? (
+                  {subscriptions.length === 0 ? (
                     <EmptyState message="You do not have any active subscriptions." />
                   ) : (
                     <div className="space-y-4">
@@ -410,8 +410,7 @@ export default async function CustomerPage() {
                 />
 
                 <div className="mt-5">
-                  {unpaidInvoices.length ===
-                  0 ? (
+                  {unpaidInvoices.length === 0 ? (
                     <EmptyState message="You do not have any unpaid invoices." />
                   ) : (
                     <div className="space-y-4">
@@ -546,9 +545,31 @@ export default async function CustomerPage() {
               />
 
               <div className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-                <ComingSoonCard title="Book a Service" />
+                <Link
+                  href="/customer/book"
+                  className="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm transition hover:border-stone-300 hover:shadow-md"
+                >
+                  <h3 className="text-lg font-semibold text-stone-900">
+                    Book a Service
+                  </h3>
 
-                <ComingSoonCard title="Request a Service" />
+                  <p className="mt-4 text-sm font-medium text-stone-700">
+                    Book now →
+                  </p>
+                </Link>
+
+                <Link
+  href="/customer/request-service"
+  className="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm transition hover:border-stone-300 hover:shadow-md"
+>
+  <h3 className="text-lg font-semibold text-stone-900">
+    Request a Service
+  </h3>
+
+  <p className="mt-4 text-sm font-medium text-stone-700">
+    Request now →
+  </p>
+</Link>
 
                 <ComingSoonCard title="Messages" />
               </div>

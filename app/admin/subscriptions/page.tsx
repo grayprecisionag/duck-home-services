@@ -38,6 +38,7 @@ export default async function AdminSubscriptionsPage({
       service_day,
       start_date,
       next_service_date,
+      next_invoice_date,
       notes,
       is_active,
       customers (
@@ -369,7 +370,7 @@ export default async function AdminSubscriptionsPage({
                         }`}
                       >
                         <div className="flex flex-col justify-between gap-5 sm:flex-row">
-                          <div>
+                          <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-3">
                               <h3 className="text-lg font-semibold text-stone-900">
                                 {subscription.name ||
@@ -400,38 +401,80 @@ export default async function AdminSubscriptionsPage({
                               {service?.name ?? "Service"}
                             </p>
 
-                            <p className="mt-2 text-sm text-stone-500">
-                              Service:{" "}
-                              {formatFrequency(
-                                subscription.service_frequency
-                              )}
-                              {subscription.service_day !== null
-                                ? ` on ${formatDay(
-                                    subscription.service_day
-                                  )}`
-                                : ""}
-                            </p>
+                            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                              <DetailItem
+                                label="Service Frequency"
+                                value={`${formatFrequency(
+                                  subscription.service_frequency
+                                )}${
+                                  subscription.service_day !== null
+                                    ? ` on ${formatDay(
+                                        subscription.service_day
+                                      )}`
+                                    : ""
+                                }`}
+                              />
 
-                            <p className="mt-1 text-sm text-stone-500">
-                              Billing:{" "}
-                              {formatFrequency(
-                                subscription.billing_frequency
-                              )}
-                            </p>
-
-                            {subscription.next_service_date && (
-                              <p className="mt-1 text-sm text-stone-500">
-                                Next service:{" "}
-                                {formatDate(
-                                  subscription.next_service_date
+                              <DetailItem
+                                label="Billing Frequency"
+                                value={formatFrequency(
+                                  subscription.billing_frequency
                                 )}
-                              </p>
-                            )}
+                              />
+
+                              <DetailItem
+                                label="Start Date"
+                                value={
+                                  subscription.start_date
+                                    ? formatDate(
+                                        subscription.start_date
+                                      )
+                                    : "Not set"
+                                }
+                              />
+
+                              <DetailItem
+                                label="Next Service Date"
+                                value={
+                                  subscription.next_service_date
+                                    ? formatDate(
+                                        subscription.next_service_date
+                                      )
+                                    : "Not scheduled"
+                                }
+                              />
+
+                              <DetailItem
+                                label="Next Invoice Date"
+                                value={
+                                  subscription.next_invoice_date
+                                    ? formatDate(
+                                        subscription.next_invoice_date
+                                      )
+                                    : "Not scheduled"
+                                }
+                              />
+
+                              <DetailItem
+                                label="Status"
+                                value={
+                                  subscription.is_active
+                                    ? "Active"
+                                    : "Paused"
+                                }
+                              />
+                            </div>
 
                             {subscription.notes && (
-                              <p className="mt-3 text-sm leading-6 text-stone-500">
-                                {subscription.notes}
-                              </p>
+                              <div className="mt-5 rounded-xl bg-stone-50 p-4">
+                                <p className="text-xs font-medium uppercase tracking-wide text-stone-500">
+                                  Notes
+                                </p>
+
+                                <p className="mt-2 text-sm leading-6 text-stone-600">
+                                  {subscription.notes}
+                                </p>
+                              </div>
                             )}
                           </div>
 
@@ -491,6 +534,26 @@ export default async function AdminSubscriptionsPage({
         </div>
       </section>
     </main>
+  );
+}
+
+function DetailItem({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-xl bg-stone-50 p-3">
+      <p className="text-xs font-medium uppercase tracking-wide text-stone-500">
+        {label}
+      </p>
+
+      <p className="mt-1 text-sm font-medium text-stone-800">
+        {value}
+      </p>
+    </div>
   );
 }
 

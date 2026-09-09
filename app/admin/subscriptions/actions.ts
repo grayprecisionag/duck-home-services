@@ -7,19 +7,41 @@ import { createClient } from "@/lib/supabase/server";
 export async function createSubscription(formData: FormData) {
   const supabase = await createClient();
 
-  const customerId = String(formData.get("customer_id") ?? "").trim();
-  const serviceId = String(formData.get("service_id") ?? "").trim();
-  const name = String(formData.get("name") ?? "").trim();
-  const priceInput = String(formData.get("price") ?? "").trim();
+  const customerId = String(
+    formData.get("customer_id") ?? ""
+  ).trim();
+
+  const serviceId = String(
+    formData.get("service_id") ?? ""
+  ).trim();
+
+  const name = String(
+    formData.get("name") ?? ""
+  ).trim();
+
+  const priceInput = String(
+    formData.get("price") ?? ""
+  ).trim();
+
   const billingFrequency = String(
     formData.get("billing_frequency") ?? "monthly"
   ).trim();
+
   const serviceFrequency = String(
     formData.get("service_frequency") ?? "weekly"
   ).trim();
-  const serviceDayInput = String(formData.get("service_day") ?? "").trim();
-  const startDate = String(formData.get("start_date") ?? "").trim();
-  const notes = String(formData.get("notes") ?? "").trim();
+
+  const serviceDayInput = String(
+    formData.get("service_day") ?? ""
+  ).trim();
+
+  const startDate = String(
+    formData.get("start_date") ?? ""
+  ).trim();
+
+  const notes = String(
+    formData.get("notes") ?? ""
+  ).trim();
 
   if (!customerId || !serviceId || !priceInput || !startDate) {
     throw new Error(
@@ -27,7 +49,9 @@ export async function createSubscription(formData: FormData) {
     );
   }
 
-  const priceCents = Math.round(Number.parseFloat(priceInput) * 100);
+  const priceCents = Math.round(
+    Number.parseFloat(priceInput) * 100
+  );
 
   if (Number.isNaN(priceCents) || priceCents < 0) {
     throw new Error("Enter a valid subscription price.");
@@ -40,9 +64,11 @@ export async function createSubscription(formData: FormData) {
 
   if (
     serviceDay !== null &&
-    (Number.isNaN(serviceDay) ||
+    (
+      Number.isNaN(serviceDay) ||
       serviceDay < 0 ||
-      serviceDay > 6)
+      serviceDay > 6
+    )
   ) {
     throw new Error("Enter a valid service day.");
   }
@@ -59,6 +85,7 @@ export async function createSubscription(formData: FormData) {
       service_day: serviceDay,
       start_date: startDate,
       next_service_date: startDate,
+      next_invoice_date: startDate,
       notes: notes || null,
       is_active: true,
     });
@@ -72,7 +99,9 @@ export async function createSubscription(formData: FormData) {
   redirect("/admin/subscriptions?saved=created");
 }
 
-export async function toggleSubscriptionStatus(formData: FormData) {
+export async function toggleSubscriptionStatus(
+  formData: FormData
+) {
   const supabase = await createClient();
 
   const subscriptionId = String(

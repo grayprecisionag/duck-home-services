@@ -41,6 +41,18 @@ export default async function AdminPage() {
           />
 
           <DashboardCard
+            title="Booking Requests"
+            description="Review and approve bookings for existing services."
+            href="/admin/booking-requests"
+          />
+
+          <DashboardCard
+            title="Service Requests"
+            description="Review custom requests, send quotes, and schedule accepted jobs."
+            href="/admin/service-requests"
+          />
+
+          <DashboardCard
             title="Customers"
             description="Manage customer information and service history."
             href="/admin/customers"
