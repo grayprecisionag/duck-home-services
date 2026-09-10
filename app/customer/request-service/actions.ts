@@ -80,6 +80,10 @@ export async function createCustomServiceRequest(
   revalidatePath(
     "/customer/request-service"
   );
+  revalidatePath("/admin");
+  revalidatePath(
+    "/admin/service-requests"
+  );
 
   redirect(
     "/customer/request-service?saved=requested"
@@ -125,6 +129,7 @@ export async function acceptCustomServiceQuote(
   revalidatePath(
     "/customer/request-service"
   );
+  revalidatePath("/admin");
   revalidatePath(
     "/admin/service-requests"
   );
@@ -173,6 +178,7 @@ export async function declineCustomServiceQuote(
   revalidatePath(
     "/customer/request-service"
   );
+  revalidatePath("/admin");
   revalidatePath(
     "/admin/service-requests"
   );

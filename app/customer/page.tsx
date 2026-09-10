@@ -1,5 +1,8 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import CustomerNotifications from "./CustomerNotifications";
+
+export const dynamic = "force-dynamic";
 
 type NamedRelation = {
   name: string;
@@ -38,10 +41,8 @@ type InvoiceRow = {
   status: string;
   issue_date: string;
   due_date: string | null;
-  paid_at: string | null;
-  payment_method: string | null;
-  payment_notes: string | null;
 };
+
 
 export default async function CustomerPage() {
   const supabase = await createClient();
@@ -51,24 +52,31 @@ export default async function CustomerPage() {
 
   const userId = claimsData?.claims?.sub;
 
-  const { data: profile } = userId
-    ? await supabase
-        .from("profiles")
-        .select("first_name, last_name")
-        .eq("id", userId)
-        .single()
-    : { data: null };
+  const [
+    profileResult,
+    customerResult,
+  ] = await Promise.all([
+    userId
+      ? supabase
+          .from("profiles")
+          .select("first_name, last_name")
+          .eq("id", userId)
+          .single()
+      : Promise.resolve({ data: null }),
 
-  const { data: customerData } = userId
-    ? await supabase
-        .from("customers")
-        .select("id, first_name, last_name")
-        .eq("profile_id", userId)
-        .maybeSingle()
-    : { data: null };
+    userId
+      ? supabase
+          .from("customers")
+          .select("id, first_name, last_name")
+          .eq("profile_id", userId)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+  ]);
+
+  const profile = profileResult.data;
 
   const customer =
-    customerData as CustomerRecord | null;
+    customerResult.data as CustomerRecord | null;
 
   let subscriptions: SubscriptionRow[] = [];
   let jobs: JobRow[] = [];
@@ -129,10 +137,7 @@ export default async function CustomerPage() {
           amount_cents,
           status,
           issue_date,
-          due_date,
-          paid_at,
-          payment_method,
-          payment_notes
+          due_date
         `)
         .eq("customer_id", customer.id)
         .order("issue_date", {
@@ -156,9 +161,6 @@ export default async function CustomerPage() {
     (invoice) => invoice.status === "unpaid"
   );
 
-  const paidInvoices = invoices.filter(
-    (invoice) => invoice.status === "paid"
-  );
 
   const outstandingTotal =
     unpaidInvoices.reduce(
@@ -202,11 +204,12 @@ export default async function CustomerPage() {
           </h2>
 
           <p className="mt-3 text-stone-600">
-            View your services, upcoming
-            appointments, invoices, and payment
-            history.
+            View your services, upcoming appointments,
+            invoices, and account updates.
           </p>
         </div>
+
+        <CustomerNotifications />
 
         {!customer ? (
           <div className="mt-8 rounded-2xl border border-amber-200 bg-amber-50 p-6">
@@ -402,149 +405,68 @@ export default async function CustomerPage() {
               </section>
             </div>
 
-            <div className="mt-12 grid gap-8 lg:grid-cols-2">
-              <section>
-                <SectionHeading
-                  title="Invoices Due"
-                  description="Outstanding invoices for your account."
-                />
+            <div className="mt-12">
+              <SectionHeading
+                title="Invoices Due"
+                description="Outstanding invoices for your account. Open an invoice to review it and pay online."
+              />
 
-                <div className="mt-5">
-                  {unpaidInvoices.length === 0 ? (
-                    <EmptyState message="You do not have any unpaid invoices." />
-                  ) : (
-                    <div className="space-y-4">
-                      {unpaidInvoices.map(
-                        (invoice) => (
-                          <div
-                            key={invoice.id}
-                            className="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm"
-                          >
-                            <div className="flex flex-col justify-between gap-4 sm:flex-row">
-                              <div>
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <h3 className="font-semibold text-stone-900">
-                                    {
-                                      invoice.description
-                                    }
-                                  </h3>
+              <div className="mt-5">
+                {unpaidInvoices.length === 0 ? (
+                  <EmptyState message="You do not have any unpaid invoices." />
+                ) : (
+                  <div className="space-y-4">
+                    {unpaidInvoices.map((invoice) => (
+                      <Link
+                        key={invoice.id}
+                        href={`/customer/invoices/${invoice.id}`}
+                        className="block rounded-2xl border border-stone-200 bg-white p-6 shadow-sm transition hover:border-stone-300 hover:shadow-md"
+                      >
+                        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h3 className="font-semibold text-stone-900">
+                                {invoice.description}
+                              </h3>
 
-                                  <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-700">
-                                    Unpaid
-                                  </span>
-                                </div>
-
-                                <p className="mt-3 text-sm text-stone-600">
-                                  Issued{" "}
-                                  {formatDate(
-                                    invoice.issue_date
-                                  )}
-                                </p>
-
-                                {invoice.due_date && (
-                                  <p className="mt-1 text-sm text-stone-600">
-                                    Due{" "}
-                                    {formatDate(
-                                      invoice.due_date
-                                    )}
-                                  </p>
-                                )}
-                              </div>
-
-                              <p className="text-xl font-semibold text-stone-900">
-                                {formatMoney(
-                                  invoice.amount_cents
-                                )}
-                              </p>
+                              <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-700">
+                                Unpaid
+                              </span>
                             </div>
-                          </div>
-                        )
-                      )}
-                    </div>
-                  )}
-                </div>
-              </section>
 
-              <section>
-                <SectionHeading
-                  title="Payment History"
-                  description="Payments already recorded on your account."
-                />
+                            <p className="mt-3 text-sm text-stone-600">
+                              Issued {formatDate(invoice.issue_date)}
+                            </p>
 
-                <div className="mt-5">
-                  {paidInvoices.length === 0 ? (
-                    <EmptyState message="No payments have been recorded yet." />
-                  ) : (
-                    <div className="space-y-4">
-                      {paidInvoices.map(
-                        (invoice) => (
-                          <div
-                            key={invoice.id}
-                            className="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm"
-                          >
-                            <div className="flex flex-col justify-between gap-4 sm:flex-row">
-                              <div>
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <h3 className="font-semibold text-stone-900">
-                                    {
-                                      invoice.description
-                                    }
-                                  </h3>
-
-                                  <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-700">
-                                    Paid
-                                  </span>
-                                </div>
-
-                                {invoice.paid_at && (
-                                  <p className="mt-3 text-sm text-stone-600">
-                                    Paid{" "}
-                                    {formatDateTime(
-                                      invoice.paid_at
-                                    )}
-                                  </p>
-                                )}
-
-                                {invoice.payment_method && (
-                                  <p className="mt-1 text-sm text-stone-600">
-                                    Payment method:{" "}
-                                    {formatPaymentMethod(
-                                      invoice.payment_method
-                                    )}
-                                  </p>
-                                )}
-
-                                {invoice.payment_notes && (
-                                  <p className="mt-2 text-sm text-stone-500">
-                                    {
-                                      invoice.payment_notes
-                                    }
-                                  </p>
-                                )}
-                              </div>
-
-                              <p className="text-xl font-semibold text-stone-900">
-                                {formatMoney(
-                                  invoice.amount_cents
-                                )}
+                            {invoice.due_date && (
+                              <p className="mt-1 text-sm text-stone-600">
+                                Due {formatDate(invoice.due_date)}
                               </p>
-                            </div>
+                            )}
+
+                            <p className="mt-4 text-sm font-medium text-stone-700">
+                              View invoice & pay →
+                            </p>
                           </div>
-                        )
-                      )}
-                    </div>
-                  )}
-                </div>
-              </section>
+
+                          <p className="shrink-0 text-xl font-semibold text-stone-900">
+                            {formatMoney(invoice.amount_cents)}
+                          </p>
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="mt-12">
               <SectionHeading
                 title="More Services"
-                description="Additional customer tools we will add next."
+                description="Book services, request custom work, or contact Duck Home Services."
               />
 
-              <div className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
                 <Link
                   href="/customer/book"
                   className="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm transition hover:border-stone-300 hover:shadow-md"
@@ -559,19 +481,48 @@ export default async function CustomerPage() {
                 </Link>
 
                 <Link
-  href="/customer/request-service"
-  className="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm transition hover:border-stone-300 hover:shadow-md"
->
-  <h3 className="text-lg font-semibold text-stone-900">
-    Request a Service
-  </h3>
+                  href="/customer/request-service"
+                  className="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm transition hover:border-stone-300 hover:shadow-md"
+                >
+                  <h3 className="text-lg font-semibold text-stone-900">
+                    Request a Service
+                  </h3>
 
-  <p className="mt-4 text-sm font-medium text-stone-700">
-    Request now →
-  </p>
-</Link>
+                  <p className="mt-4 text-sm font-medium text-stone-700">
+                    Request now →
+                  </p>
+                </Link>
 
-                <ComingSoonCard title="Messages" />
+
+                <Link
+                  href="/customer/history"
+                  className="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm transition hover:border-stone-300 hover:shadow-md"
+                >
+                  <h3 className="text-lg font-semibold text-stone-900">
+                    Completed & History
+                  </h3>
+
+                  <p className="mt-2 text-sm leading-6 text-stone-600">
+                    View completed services and paid invoices.
+                  </p>
+
+                  <p className="mt-4 text-sm font-medium text-stone-700">
+                    View history →
+                  </p>
+                </Link>
+
+                <Link
+                  href="/customer/messages"
+                  className="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm transition hover:border-stone-300 hover:shadow-md"
+                >
+                  <h3 className="text-lg font-semibold text-stone-900">
+                    Messages
+                  </h3>
+
+                  <p className="mt-4 text-sm font-medium text-stone-700">
+                    Open messages →
+                  </p>
+                </Link>
               </div>
             </div>
           </>
@@ -635,31 +586,12 @@ function EmptyState({
   );
 }
 
-function ComingSoonCard({
-  title,
-}: {
-  title: string;
-}) {
-  return (
-    <div className="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm">
-      <h3 className="text-lg font-semibold text-stone-900">
-        {title}
-      </h3>
-
-      <p className="mt-4 text-sm text-stone-500">
-        Coming soon →
-      </p>
-    </div>
-  );
-}
-
 function StatusBadge({
   status,
 }: {
   status: string;
 }) {
-  const isInProgress =
-    status === "in_progress";
+  const isInProgress = status === "in_progress";
 
   return (
     <span
@@ -669,9 +601,7 @@ function StatusBadge({
           : "bg-stone-100 text-stone-700"
       }`}
     >
-      {isInProgress
-        ? "In Progress"
-        : "Scheduled"}
+      {isInProgress ? "In Progress" : "Scheduled"}
     </span>
   );
 }
@@ -708,15 +638,6 @@ function formatDate(date: string) {
   );
 }
 
-function formatDateTime(date: string) {
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    timeZone:
-      "America/Los_Angeles",
-  }).format(new Date(date));
-}
 
 function formatTime(time: string) {
   const [hours, minutes] =
@@ -763,17 +684,3 @@ function formatServiceDay(day: number) {
   return days[day] ?? "Scheduled Day";
 }
 
-function formatPaymentMethod(
-  method: string
-) {
-  const names: Record<string, string> = {
-    cash: "Cash",
-    zelle: "Zelle",
-    apple_cash: "Apple Cash",
-    venmo: "Venmo",
-    paypal: "PayPal",
-    other: "Other",
-  };
-
-  return names[method] ?? method;
-}
