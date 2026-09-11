@@ -11,6 +11,7 @@ type SquareWebhookPayload = {
     object?: {
       payment?: {
         id?: string;
+        order_id?: string;
         status?: string;
         note?: string;
         amount_money?: {
@@ -204,7 +205,8 @@ export async function POST(request: Request) {
       .select(`
         id,
         amount_cents,
-        status
+        status,
+        square_payment_id
       `)
       .eq("id", invoiceId)
       .maybeSingle();
@@ -236,12 +238,6 @@ export async function POST(request: Request) {
     });
   }
 
-  if (invoice.status === "paid") {
-    return NextResponse.json({
-      received: true,
-    });
-  }
-
   const squareAmount =
     payment.amount_money?.amount;
 
@@ -268,18 +264,57 @@ export async function POST(request: Request) {
     );
   }
 
+  if (
+    invoice.square_payment_id &&
+    invoice.square_payment_id !== payment.id
+  ) {
+    console.error(
+      "Invoice already has a different Square payment.",
+      {
+        invoiceId,
+        existingPaymentId:
+          invoice.square_payment_id,
+        incomingPaymentId: payment.id,
+      }
+    );
+
+    return NextResponse.json(
+      {
+        error:
+          "Invoice already has a different Square payment.",
+      },
+      {
+        status: 409,
+      }
+    );
+  }
+
+  if (
+    invoice.status === "paid" &&
+    invoice.square_payment_id === payment.id
+  ) {
+    return NextResponse.json({
+      received: true,
+    });
+  }
+
   const { error: updateError } =
     await supabaseAdmin
       .from("invoices")
       .update({
         status: "paid",
         paid_at: new Date().toISOString(),
-        payment_method: "other",
+        payment_method: "square",
         payment_notes:
-          `Paid online through Square. Square payment ID: ${payment.id ?? "unknown"}`,
+          `Paid online through Square. Payment ID: ${
+            payment.id ?? "unknown"
+          }`,
+        square_payment_id:
+          payment.id ?? null,
+        square_order_id:
+          payment.order_id ?? null,
       })
-      .eq("id", invoice.id)
-      .eq("status", "unpaid");
+      .eq("id", invoice.id);
 
   if (updateError) {
     console.error(
