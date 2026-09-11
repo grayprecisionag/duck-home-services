@@ -1,124 +1,72 @@
-import { randomUUID } from "crypto";
+import crypto from "crypto";
 import { NextResponse } from "next/server";
-import { createClient as createSupabaseAdmin } from "@supabase/supabase-js";
-import { createClient } from "@/lib/supabase/server";
+import { createClient } from "@supabase/supabase-js";
 
 export const runtime = "nodejs";
 
-type RouteContext = {
-  params: Promise<{
-    invoiceId: string;
-  }>;
-};
-
-type CustomerRecord = {
-  id: string;
-};
-
-type InvoiceRecord = {
-  id: string;
-  customer_id: string;
-  description: string;
-  amount_cents: number;
-  status: string;
-};
-
-type SquarePaymentLinkResponse = {
-  payment_link?: {
-    id?: string;
-    order_id?: string;
-    url?: string;
+type SquareWebhookPayload = {
+  type?: string;
+  event_id?: string;
+  data?: {
+    object?: {
+      payment?: {
+        id?: string;
+        order_id?: string;
+        status?: string;
+        note?: string;
+        amount_money?: {
+          amount?: number;
+          currency?: string;
+        };
+      };
+    };
   };
-  errors?: Array<{
-    category?: string;
-    code?: string;
-    detail?: string;
-  }>;
 };
 
-export async function POST(
-  request: Request,
-  { params }: RouteContext
-) {
-  const { invoiceId } = await params;
+function isValidSquareSignature({
+  signature,
+  body,
+  notificationUrl,
+  signatureKey,
+}: {
+  signature: string;
+  body: string;
+  notificationUrl: string;
+  signatureKey: string;
+}) {
+  const payload = notificationUrl + body;
 
-  const supabase = await createClient();
+  const expectedSignature = crypto
+    .createHmac("sha256", signatureKey)
+    .update(payload)
+    .digest("base64");
 
-  const { data: claimsData } =
-    await supabase.auth.getClaims();
+  const providedBuffer = Buffer.from(signature);
+  const expectedBuffer = Buffer.from(expectedSignature);
 
-  const userId = claimsData?.claims?.sub;
-
-  if (!userId) {
-    return NextResponse.redirect(
-      new URL("/login", request.url),
-      303
-    );
+  if (
+    providedBuffer.length !== expectedBuffer.length
+  ) {
+    return false;
   }
 
-  const { data: customerData } = await supabase
-    .from("customers")
-    .select("id")
-    .eq("profile_id", userId)
-    .maybeSingle();
+  return crypto.timingSafeEqual(
+    providedBuffer,
+    expectedBuffer
+  );
+}
 
-  const customer =
-    customerData as CustomerRecord | null;
-
-  if (!customer) {
-    return NextResponse.redirect(
-      new URL("/customer", request.url),
-      303
+export async function POST(request: Request) {
+  const signature =
+    request.headers.get(
+      "x-square-hmacsha256-signature"
     );
-  }
 
-  const { data: invoiceData } = await supabase
-    .from("invoices")
-    .select(`
-      id,
-      customer_id,
-      description,
-      amount_cents,
-      status
-    `)
-    .eq("id", invoiceId)
-    .eq("customer_id", customer.id)
-    .maybeSingle();
+  const signatureKey =
+    process.env.SQUARE_WEBHOOK_SIGNATURE_KEY;
 
-  const invoice =
-    invoiceData as InvoiceRecord | null;
-
-  if (!invoice) {
-    return NextResponse.redirect(
-      new URL("/customer", request.url),
-      303
-    );
-  }
-
-  if (invoice.status === "paid") {
-    return NextResponse.redirect(
-      new URL(
-        `/customer/invoices/${invoice.id}`,
-        request.url
-      ),
-      303
-    );
-  }
-
-  if (invoice.amount_cents <= 0) {
-    return new Response(
-      "This invoice does not have a valid payment amount.",
-      {
-        status: 400,
-      }
-    );
-  }
-
-  const squareAccessToken =
-    process.env.SQUARE_ACCESS_TOKEN;
-
-  const squareLocationId =
-    process.env.SQUARE_LOCATION_ID;
+  const notificationUrl =
+    process.env.SQUARE_WEBHOOK_URL;
 
   const supabaseUrl =
     process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -127,128 +75,347 @@ export async function POST(
     process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (
-    !squareAccessToken ||
-    !squareLocationId ||
+    !signatureKey ||
+    !notificationUrl ||
     !supabaseUrl ||
     !serviceRoleKey
   ) {
     console.error(
-      "Square or Supabase server credentials are missing."
+      "Webhook environment variables are missing."
     );
 
-    return new Response(
-      "Payment setup is incomplete.",
+    return NextResponse.json(
+      {
+        error:
+          "Webhook configuration is incomplete.",
+      },
       {
         status: 500,
       }
     );
   }
 
-  const squareResponse = await fetch(
-    "https://connect.squareupsandbox.com/v2/online-checkout/payment-links",
-    {
-      method: "POST",
-      headers: {
-        Authorization:
-          `Bearer ${squareAccessToken}`,
-        "Content-Type": "application/json",
-        "Square-Version": "2026-08-19",
+  if (!signature) {
+    return NextResponse.json(
+      {
+        error: "Missing Square signature.",
       },
-      body: JSON.stringify({
-        idempotency_key: randomUUID(),
+      {
+        status: 401,
+      }
+    );
+  }
 
-        quick_pay: {
-          name: invoice.description,
-          price_money: {
-            amount: invoice.amount_cents,
-            currency: "USD",
-          },
-          location_id: squareLocationId,
-        },
+  const body = await request.text();
 
-        payment_note:
-          `Duck Home Services invoice:${invoice.id}`,
-      }),
+  const validSignature =
+    isValidSquareSignature({
+      signature,
+      body,
+      notificationUrl,
+      signatureKey,
+    });
+
+  if (!validSignature) {
+    console.error(
+      "Invalid Square webhook signature."
+    );
+
+    return NextResponse.json(
+      {
+        error: "Invalid signature.",
+      },
+      {
+        status: 401,
+      }
+    );
+  }
+
+  let payload: SquareWebhookPayload;
+
+  try {
+    payload = JSON.parse(body);
+  } catch {
+    return NextResponse.json(
+      {
+        error: "Invalid JSON.",
+      },
+      {
+        status: 400,
+      }
+    );
+  }
+
+  if (payload.type !== "payment.updated") {
+    return NextResponse.json({
+      received: true,
+    });
+  }
+
+  const eventId = payload.event_id;
+
+  const payment =
+    payload.data?.object?.payment;
+
+  if (!eventId || !payment) {
+    return NextResponse.json({
+      received: true,
+    });
+  }
+
+  if (payment.status !== "COMPLETED") {
+    return NextResponse.json({
+      received: true,
+    });
+  }
+
+  const supabaseAdmin = createClient(
+    supabaseUrl,
+    serviceRoleKey,
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
     }
   );
 
-  const squareData =
-    (await squareResponse.json()) as SquarePaymentLinkResponse;
+  // Check whether this exact Square event
+  // has already been processed.
+  const {
+    data: existingEvent,
+    error: existingEventError,
+  } = await supabaseAdmin
+    .from("square_webhook_events")
+    .select("event_id")
+    .eq("event_id", eventId)
+    .maybeSingle();
 
-  if (!squareResponse.ok) {
+  if (existingEventError) {
     console.error(
-      "Square CreatePaymentLink error:",
-      squareData.errors
+      "Square event lookup failed:",
+      existingEventError
     );
 
-    return new Response(
-      "Square could not create the payment checkout.",
+    return NextResponse.json(
+      {
+        error:
+          "Webhook event lookup failed.",
+      },
       {
         status: 500,
       }
     );
   }
 
-  const paymentLink =
-    squareData.payment_link;
+  if (existingEvent) {
+    return NextResponse.json({
+      received: true,
+      duplicate: true,
+    });
+  }
 
-  const checkoutUrl =
-    paymentLink?.url;
+  const note = payment.note ?? "";
 
-  if (!checkoutUrl) {
+  const invoicePrefix =
+    "Duck Home Services invoice:";
+
+  if (!note.startsWith(invoicePrefix)) {
+    return NextResponse.json({
+      received: true,
+    });
+  }
+
+  const invoiceId = note
+    .slice(invoicePrefix.length)
+    .trim();
+
+  if (!invoiceId) {
+    return NextResponse.json({
+      received: true,
+    });
+  }
+
+  const {
+    data: invoice,
+    error: invoiceError,
+  } = await supabaseAdmin
+    .from("invoices")
+    .select(`
+      id,
+      amount_cents,
+      status,
+      square_payment_id
+    `)
+    .eq("id", invoiceId)
+    .maybeSingle();
+
+  if (invoiceError) {
     console.error(
-      "Square did not return a checkout URL:",
-      squareData
+      "Invoice lookup failed:",
+      invoiceError
     );
 
-    return new Response(
-      "Square did not return a payment link.",
+    return NextResponse.json(
+      {
+        error: "Invoice lookup failed.",
+      },
       {
         status: 500,
       }
     );
   }
 
-  const supabaseAdmin =
-    createSupabaseAdmin(
-      supabaseUrl,
-      serviceRoleKey,
+  if (!invoice) {
+    console.error(
+      "Square payment referenced unknown invoice:",
+      invoiceId
+    );
+
+    return NextResponse.json({
+      received: true,
+    });
+  }
+
+  const squareAmount =
+    payment.amount_money?.amount;
+
+  if (
+    typeof squareAmount !== "number" ||
+    squareAmount !== invoice.amount_cents
+  ) {
+    console.error(
+      "Square payment amount did not match invoice.",
       {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false,
+        invoiceId,
+        expected: invoice.amount_cents,
+        received: squareAmount,
+      }
+    );
+
+    return NextResponse.json(
+      {
+        error: "Payment amount mismatch.",
+      },
+      {
+        status: 400,
+      }
+    );
+  }
+
+  if (
+    invoice.square_payment_id &&
+    invoice.square_payment_id !== payment.id
+  ) {
+    console.error(
+      "Invoice already has a different Square payment.",
+      {
+        invoiceId,
+        existingPaymentId:
+          invoice.square_payment_id,
+        incomingPaymentId:
+          payment.id,
+      }
+    );
+
+    return NextResponse.json(
+      {
+        error:
+          "Invoice already has a different Square payment.",
+      },
+      {
+        status: 409,
+      }
+    );
+  }
+
+  /*
+   * The invoice may already be paid if Square
+   * retried after the invoice update succeeded
+   * but before we recorded the event.
+   */
+  if (
+    invoice.status !== "paid" ||
+    invoice.square_payment_id !== payment.id
+  ) {
+    const { error: updateError } =
+      await supabaseAdmin
+        .from("invoices")
+        .update({
+          status: "paid",
+          paid_at: new Date().toISOString(),
+          payment_method: "square",
+          payment_notes:
+            `Paid online through Square. Payment ID: ${
+              payment.id ?? "unknown"
+            }`,
+          square_payment_id:
+            payment.id ?? null,
+          square_order_id:
+            payment.order_id ?? null,
+        })
+        .eq("id", invoice.id);
+
+    if (updateError) {
+      console.error(
+        "Invoice payment update failed:",
+        updateError
+      );
+
+      return NextResponse.json(
+        {
+          error:
+            "Invoice payment update failed.",
         },
-      }
-    );
+        {
+          status: 500,
+        }
+      );
+    }
+  }
 
-  const { error: updateError } =
+  /*
+   * Record the Square event only after the
+   * invoice was successfully processed.
+   */
+  const { error: eventInsertError } =
     await supabaseAdmin
-      .from("invoices")
-      .update({
-        square_payment_link_id:
-          paymentLink?.id ?? null,
-        square_order_id:
-          paymentLink?.order_id ?? null,
-      })
-      .eq("id", invoice.id)
-      .eq("status", "unpaid");
+      .from("square_webhook_events")
+      .insert({
+        event_id: eventId,
+        event_type:
+          payload.type ?? "payment.updated",
+        square_payment_id:
+          payment.id ?? null,
+        invoice_id: invoice.id,
+      });
 
-  if (updateError) {
+  /*
+   * PostgreSQL 23505 means another copy of the
+   * same webhook event was already recorded.
+   * That's safe and can still return 200.
+   */
+  if (
+    eventInsertError &&
+    eventInsertError.code !== "23505"
+  ) {
     console.error(
-      "Failed to save Square checkout details:",
-      updateError
+      "Failed to record Square webhook event:",
+      eventInsertError
     );
 
-    return new Response(
-      "The Square checkout was created, but its details could not be saved.",
+    return NextResponse.json(
+      {
+        error:
+          "Webhook event could not be recorded.",
+      },
       {
         status: 500,
       }
     );
   }
 
-  return NextResponse.redirect(
-    checkoutUrl,
-    303
-  );
+  return NextResponse.json({
+    received: true,
+  });
 }
