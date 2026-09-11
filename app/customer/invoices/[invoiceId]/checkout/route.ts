@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
+import { createClient as createSupabaseAdmin } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -119,16 +120,24 @@ export async function POST(
   const squareLocationId =
     process.env.SQUARE_LOCATION_ID;
 
+  const supabaseUrl =
+    process.env.NEXT_PUBLIC_SUPABASE_URL;
+
+  const serviceRoleKey =
+    process.env.SUPABASE_SERVICE_ROLE_KEY;
+
   if (
     !squareAccessToken ||
-    !squareLocationId
+    !squareLocationId ||
+    !supabaseUrl ||
+    !serviceRoleKey
   ) {
     console.error(
-      "Square Sandbox credentials are missing."
+      "Square or Supabase server credentials are missing."
     );
 
     return new Response(
-      "Square payment setup is incomplete.",
+      "Payment setup is incomplete.",
       {
         status: 500,
       }
@@ -140,7 +149,8 @@ export async function POST(
     {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${squareAccessToken}`,
+        Authorization:
+          `Bearer ${squareAccessToken}`,
         "Content-Type": "application/json",
         "Square-Version": "2026-08-19",
       },
@@ -179,8 +189,11 @@ export async function POST(
     );
   }
 
+  const paymentLink =
+    squareData.payment_link;
+
   const checkoutUrl =
-    squareData.payment_link?.url;
+    paymentLink?.url;
 
   if (!checkoutUrl) {
     console.error(
@@ -190,6 +203,44 @@ export async function POST(
 
     return new Response(
       "Square did not return a payment link.",
+      {
+        status: 500,
+      }
+    );
+  }
+
+  const supabaseAdmin =
+    createSupabaseAdmin(
+      supabaseUrl,
+      serviceRoleKey,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false,
+        },
+      }
+    );
+
+  const { error: updateError } =
+    await supabaseAdmin
+      .from("invoices")
+      .update({
+        square_payment_link_id:
+          paymentLink?.id ?? null,
+        square_order_id:
+          paymentLink?.order_id ?? null,
+      })
+      .eq("id", invoice.id)
+      .eq("status", "unpaid");
+
+  if (updateError) {
+    console.error(
+      "Failed to save Square checkout details:",
+      updateError
+    );
+
+    return new Response(
+      "The Square checkout was created, but its details could not be saved.",
       {
         status: 500,
       }
