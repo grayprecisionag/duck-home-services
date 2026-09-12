@@ -43,7 +43,6 @@ type InvoiceRow = {
   due_date: string | null;
 };
 
-
 export default async function CustomerPage() {
   const supabase = await createClient();
 
@@ -161,7 +160,6 @@ export default async function CustomerPage() {
     (invoice) => invoice.status === "unpaid"
   );
 
-
   const outstandingTotal =
     unpaidInvoices.reduce(
       (total, invoice) =>
@@ -273,11 +271,12 @@ export default async function CustomerPage() {
                             );
 
                           return (
-                            <div
+                            <Link
                               key={
                                 subscription.id
                               }
-                              className="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm"
+                              href={`/customer/subscriptions/${subscription.id}`}
+                              className="block rounded-2xl border border-stone-200 bg-white p-6 shadow-sm transition hover:border-stone-300 hover:shadow-md"
                             >
                               <div className="flex flex-col justify-between gap-4 sm:flex-row">
                                 <div>
@@ -312,6 +311,10 @@ export default async function CustomerPage() {
                                       )}
                                     </p>
                                   )}
+
+                                  <p className="mt-4 text-sm font-medium text-stone-700">
+                                    View plan →
+                                  </p>
                                 </div>
 
                                 <div className="shrink-0 sm:text-right">
@@ -329,7 +332,7 @@ export default async function CustomerPage() {
                                   </p>
                                 </div>
                               </div>
-                            </div>
+                            </Link>
                           );
                         }
                       )}
@@ -435,12 +438,18 @@ export default async function CustomerPage() {
                             </div>
 
                             <p className="mt-3 text-sm text-stone-600">
-                              Issued {formatDate(invoice.issue_date)}
+                              Issued{" "}
+                              {formatDate(
+                                invoice.issue_date
+                              )}
                             </p>
 
                             {invoice.due_date && (
                               <p className="mt-1 text-sm text-stone-600">
-                                Due {formatDate(invoice.due_date)}
+                                Due{" "}
+                                {formatDate(
+                                  invoice.due_date
+                                )}
                               </p>
                             )}
 
@@ -450,7 +459,9 @@ export default async function CustomerPage() {
                           </div>
 
                           <p className="shrink-0 text-xl font-semibold text-stone-900">
-                            {formatMoney(invoice.amount_cents)}
+                            {formatMoney(
+                              invoice.amount_cents
+                            )}
                           </p>
                         </div>
                       </Link>
@@ -492,7 +503,6 @@ export default async function CustomerPage() {
                     Request now →
                   </p>
                 </Link>
-
 
                 <Link
                   href="/customer/history"
@@ -591,7 +601,8 @@ function StatusBadge({
 }: {
   status: string;
 }) {
-  const isInProgress = status === "in_progress";
+  const isInProgress =
+    status === "in_progress";
 
   return (
     <span
@@ -601,7 +612,9 @@ function StatusBadge({
           : "bg-stone-100 text-stone-700"
       }`}
     >
-      {isInProgress ? "In Progress" : "Scheduled"}
+      {isInProgress
+        ? "In Progress"
+        : "Scheduled"}
     </span>
   );
 }
@@ -637,7 +650,6 @@ function formatDate(date: string) {
     new Date(`${date}T00:00:00Z`)
   );
 }
-
 
 function formatTime(time: string) {
   const [hours, minutes] =
@@ -683,4 +695,3 @@ function formatServiceDay(day: number) {
 
   return days[day] ?? "Scheduled Day";
 }
-
