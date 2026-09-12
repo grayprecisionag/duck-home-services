@@ -286,6 +286,15 @@ export default async function CustomerHistoryPage() {
                           )}
                         </p>
                       </div>
+
+                      <div className="mt-5 border-t border-stone-100 pt-4">
+                        <Link
+                          href={`/customer/invoices/${invoice.id}`}
+                          className="inline-flex rounded-xl border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                        >
+                          View Receipt →
+                        </Link>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -422,6 +431,7 @@ function formatPaymentMethod(
     apple_cash: "Apple Cash",
     venmo: "Venmo",
     paypal: "PayPal",
+    square: "Square",
     other: "Other",
   };
 
