@@ -152,10 +152,12 @@ export async function POST(request: Request) {
     });
   }
 
+  const eventId = payload.event_id;
+
   const payment =
     payload.data?.object?.payment;
 
-  if (!payment) {
+  if (!eventId || !payment) {
     return NextResponse.json({
       received: true,
     });
@@ -164,6 +166,50 @@ export async function POST(request: Request) {
   if (payment.status !== "COMPLETED") {
     return NextResponse.json({
       received: true,
+    });
+  }
+
+  const supabaseAdmin = createClient(
+    supabaseUrl,
+    serviceRoleKey,
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    }
+  );
+
+  const {
+    data: existingEvent,
+    error: existingEventError,
+  } = await supabaseAdmin
+    .from("square_webhook_events")
+    .select("event_id")
+    .eq("event_id", eventId)
+    .maybeSingle();
+
+  if (existingEventError) {
+    console.error(
+      "Square event lookup failed:",
+      existingEventError
+    );
+
+    return NextResponse.json(
+      {
+        error:
+          "Webhook event lookup failed.",
+      },
+      {
+        status: 500,
+      }
+    );
+  }
+
+  if (existingEvent) {
+    return NextResponse.json({
+      received: true,
+      duplicate: true,
     });
   }
 
@@ -188,28 +234,19 @@ export async function POST(request: Request) {
     });
   }
 
-  const supabaseAdmin = createClient(
-    supabaseUrl,
-    serviceRoleKey,
-    {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false,
-      },
-    }
-  );
-
-  const { data: invoice, error: invoiceError } =
-    await supabaseAdmin
-      .from("invoices")
-      .select(`
-        id,
-        amount_cents,
-        status,
-        square_payment_id
-      `)
-      .eq("id", invoiceId)
-      .maybeSingle();
+  const {
+    data: invoice,
+    error: invoiceError,
+  } = await supabaseAdmin
+    .from("invoices")
+    .select(`
+      id,
+      amount_cents,
+      status,
+      square_payment_id
+    `)
+    .eq("id", invoiceId)
+    .maybeSingle();
 
   if (invoiceError) {
     console.error(
@@ -274,7 +311,8 @@ export async function POST(request: Request) {
         invoiceId,
         existingPaymentId:
           invoice.square_payment_id,
-        incomingPaymentId: payment.id,
+        incomingPaymentId:
+          payment.id,
       }
     );
 
@@ -290,42 +328,70 @@ export async function POST(request: Request) {
   }
 
   if (
-    invoice.status === "paid" &&
-    invoice.square_payment_id === payment.id
+    invoice.status !== "paid" ||
+    invoice.square_payment_id !== payment.id
   ) {
-    return NextResponse.json({
-      received: true,
-    });
+    const { error: updateError } =
+      await supabaseAdmin
+        .from("invoices")
+        .update({
+          status: "paid",
+          paid_at: new Date().toISOString(),
+          payment_method: "square",
+          payment_notes:
+            `Paid online through Square. Payment ID: ${
+              payment.id ?? "unknown"
+            }`,
+          square_payment_id:
+            payment.id ?? null,
+          square_order_id:
+            payment.order_id ?? null,
+        })
+        .eq("id", invoice.id);
+
+    if (updateError) {
+      console.error(
+        "Invoice payment update failed:",
+        updateError
+      );
+
+      return NextResponse.json(
+        {
+          error:
+            "Invoice payment update failed.",
+        },
+        {
+          status: 500,
+        }
+      );
+    }
   }
 
-  const { error: updateError } =
+  const { error: eventInsertError } =
     await supabaseAdmin
-      .from("invoices")
-      .update({
-        status: "paid",
-        paid_at: new Date().toISOString(),
-        payment_method: "square",
-        payment_notes:
-          `Paid online through Square. Payment ID: ${
-            payment.id ?? "unknown"
-          }`,
+      .from("square_webhook_events")
+      .insert({
+        event_id: eventId,
+        event_type:
+          payload.type ?? "payment.updated",
         square_payment_id:
           payment.id ?? null,
-        square_order_id:
-          payment.order_id ?? null,
-      })
-      .eq("id", invoice.id);
+        invoice_id: invoice.id,
+      });
 
-  if (updateError) {
+  if (
+    eventInsertError &&
+    eventInsertError.code !== "23505"
+  ) {
     console.error(
-      "Invoice payment update failed:",
-      updateError
+      "Failed to record Square webhook event:",
+      eventInsertError
     );
 
     return NextResponse.json(
       {
         error:
-          "Invoice payment update failed.",
+          "Webhook event could not be recorded.",
       },
       {
         status: 500,
